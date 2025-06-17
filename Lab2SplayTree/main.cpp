@@ -1,192 +1,197 @@
 using namespace std;
 
 #include <iostream>
-#include <vector>
 #include <string>
+#include <vector>
 #include <numeric>
-#include <functional>
 #include <stdexcept>
 
-//==========================================================================
-//  RATIONAL
-//==========================================================================
+
 struct Rational {
     long long num{0}, den{1};
+
     Rational(long long n = 0, long long d = 1) {
         if (d == 0) throw invalid_argument("denominator = 0");
-        if (d < 0) { n = -n; d = -d; }
+        if (d < 0) { n = -n;  d = -d; }
         long long g = gcd(n, d);
-        num = n / g; den = d / g;
+        num = n / g;   den = d / g;
     }
-    bool operator<(const Rational& o) const { return num * o.den < o.num * den; }
+    bool operator<(const Rational& o)  const { return num * o.den <  o.num * den; }
+    bool operator<=(const Rational& o) const { return !(o < *this); }
     bool operator==(const Rational& o) const { return num == o.num && den == o.den; }
+
     string toString() const { return to_string(num) + '/' + to_string(den); }
     friend ostream& operator<<(ostream& os, const Rational& r) { return os << r.toString(); }
 };
 
-//==========================================================================
-//  SPLAY TREE
-//==========================================================================
-template <typename T, typename Compare = less<T>>
-class SplayTree {
-    struct Node {
-        T     key;
-        Node *left{nullptr}, *right{nullptr}, *parent{nullptr};
-        explicit Node(const T& k) : key(k) {}
-    };
 
-    Node*   root_ = nullptr;
-    Compare cmp_  = Compare{};
+template <typename T> class BinominalHeap;
 
-    void rotateLeft(Node* x) {
-        Node* y = x->right;
-        x->right = y->left;
-        if (y->left) y->left->parent = x;
-        y->parent = x->parent;
-        if (!x->parent)       root_ = y;
-        else if (x == x->parent->left) x->parent->left  = y;
-        else                           x->parent->right = y;
-        y->left = x; x->parent = y;
-    }
-    void rotateRight(Node* x) {
-        Node* y = x->left;
-        x->left = y->right;
-        if (y->right) y->right->parent = x;
-        y->parent = x->parent;
-        if (!x->parent)       root_ = y;
-        else if (x == x->parent->left) x->parent->left  = y;
-        else                           x->parent->right = y;
-        y->right = x; x->parent = y;
-    }
-
-    void splay(Node* x) {
-        if (!x) return;
-        while (x->parent) {
-            Node* p = x->parent;
-            Node* g = p->parent;
-            if (!g) {                           // Zig
-                if (x == p->left)  rotateRight(p);
-                else               rotateLeft(p);
-            } else if ((x == p->left) == (p == g->left)) { // Zig-Zig
-                if (x == p->left)  { rotateRight(g); rotateRight(p); }
-                else               { rotateLeft(g);  rotateLeft(p);  }
-            } else {                              // Zig-Zag
-                if (x == p->left)  { rotateRight(p); rotateLeft(g); }
-                else               { rotateLeft(p);  rotateRight(g);}
-            }
-        }
-    }
-
-    static void destroy(Node* n) {
-        if (!n) return;
-        destroy(n->left); destroy(n->right); delete n;
-    }
-
-    static void printRec(const Node* n, const string& indent, bool right, ostream& os) {
-        if (!n) return;
-        printRec(n->right, indent + (right ? "        " : "│       "), true, os);
-        os << indent;
-        if (right) os << "└───── ";
-        else       os << "┌───── ";
-        os << n->key << '\n';
-        printRec(n->left,  indent + (right ? "        " : "│       "), false, os);
-    }
-
+template <typename T>
+class Node {
 public:
-    SplayTree() = default;
-    ~SplayTree() { destroy(root_); }
-    SplayTree(const SplayTree&) = delete;
-    SplayTree& operator=(const SplayTree&) = delete;
+    Node *parent{}, *sibling{}, *child{};
+    T  value{};
+    int degree{0};
 
-    //── insert (no duplicates)
-    void insert(const T& key) {
-        if (!root_) { root_ = new Node(key); return; }
-        Node* cur = root_;
-        Node* parent = nullptr;
-        bool leftChild = false;
-        while (cur) {
-            parent = cur;
-            if (cmp_(key, cur->key)) { cur = cur->left;  leftChild = true;  }
-            else if (cmp_(cur->key, key)) { cur = cur->right; leftChild = false; }
-            else { splay(cur); return; }                    // duplicate → splay & ignore
+    Node()  = default;
+    explicit Node(const T& v) : value(v) {}
+
+    void printPretty(const string& prefix, bool isTail) const {
+        cout << prefix << (isTail ? "└── " : "├── ") << value << '\n';
+
+        vector<Node*> kids;
+        for (auto* c = child; c; c = c->sibling) kids.push_back(c);
+
+        for (size_t i = 0; i < kids.size(); ++i)
+            kids[i]->printPretty(prefix + (isTail ? "    " : "│   "), i + 1 == kids.size());
+    }
+
+    void link(Node* other) {
+        parent = other;
+        sibling = other->child;
+        other->child = this;
+        ++other->degree;
+    }
+    friend BinominalHeap<T>;
+};
+
+template <typename T>
+class BinominalHeap {
+    Node<T>* head = nullptr;
+public:
+    BinominalHeap() = default;
+    explicit BinominalHeap(const T& v) { head = new Node<T>(v); }
+
+    /* -------------------------------------------------- */
+    /*                    HELPERS                         */
+    /* -------------------------------------------------- */
+    void printPretty() const {
+        if (!head) { cout << "(empty)\n"; return; }
+        for (auto* h = head; h; h = h->sibling)
+            h->printPretty("", h->sibling == nullptr);
+    }
+
+    Node<T>* minNode() const {
+        Node<T>* mn = head;
+        for (auto* cur = head; cur; cur = cur->sibling)
+            if (cur->value < mn->value) mn = cur;
+        return mn;
+    }
+    Node<T>* prevMinNode() const {
+        Node<T>* prev = nullptr, *bestPrev = nullptr, *mn = head;
+        for (auto* cur = head; cur; prev = cur, cur = cur->sibling)
+            if (cur->value < mn->value) { mn = cur; bestPrev = prev; }
+        return bestPrev;
+    }
+
+    void merge(BinominalHeap* a, BinominalHeap* b) {
+        if (!a->head) { head = b->head; return; }
+        if (!b->head) { head = a->head; return; }
+
+        Node<T>* aC = a->head;
+        Node<T>* bC = b->head;
+
+        head = (aC->degree <= bC->degree) ? aC : bC;
+        if (head == aC) aC = aC->sibling;
+        else             bC = bC->sibling;
+
+        Node<T>* tail = head;
+        while (aC && bC) {
+            if (aC->degree < bC->degree) { tail->sibling = aC; aC = aC->sibling; }
+            else                          { tail->sibling = bC; bC = bC->sibling; }
+            tail = tail->sibling;
         }
-        Node* n = new Node(key);
-        n->parent = parent;
-        if (leftChild) parent->left = n; else parent->right = n;
-        splay(n);
+        tail->sibling = aC ? aC : bC;
     }
 
-    //── find (returns true/false, splays found/last accessed)
-    bool contains(const T& key) {
-        Node* cur = root_;
-        Node* last = nullptr;
-        while (cur) {
-            last = cur;
-            if (cmp_(key, cur->key)) cur = cur->left;
-            else if (cmp_(cur->key, key)) cur = cur->right;
-            else { splay(cur); return true; }
+    void unionHeaps(BinominalHeap* a, BinominalHeap* b) {
+        merge(a, b);
+        if (!head) return;
+
+        Node<T>* prev = nullptr;
+        Node<T>* cur  = head;
+        Node<T>* next = cur->sibling;
+
+        while (next) {
+            bool needLink = (cur->degree == next->degree) &&
+                            ( !(next->sibling && next->sibling->degree == cur->degree) );
+
+            if (!needLink)
+            { prev = cur; cur = next; }
+            else if (cur->value <= next->value) {
+                cur->sibling = next->sibling;
+                next->link(cur);
+            } else {
+                if (!prev) head = next;
+                else prev->sibling = next;
+                cur->link(next);
+                cur = next;
+            }
+            next = cur->sibling;
         }
-        if (last) splay(last);
-        return false;
     }
 
-    //── extract minimum (splays minimum to root, then removes)
-    T extractMin() {
-        if (!root_) throw runtime_error("tree empty");
-        Node* cur = root_;
-        while (cur->left) cur = cur->left;
-        splay(cur);                                 // now cur = root
-        T res = cur->key;
-        Node* r = cur->right;
-        if (r) r->parent = nullptr;
-        delete cur;
-        root_ = r;
-        return res;
+    void insert(const T& v) {
+        BinominalHeap tmp(v);
+        unionHeaps(this, &tmp);
     }
 
-    bool empty() const noexcept { return root_ == nullptr; }
+    void extractMin() {
+        if (!head) return;
+        Node<T>* mnPrev = prevMinNode();
+        Node<T>* mn = (mnPrev ? mnPrev->sibling : head);
 
-    //── visualisation
-    void print(ostream& os = cout) const {
-        if (!root_) { os << "(empty)\n"; return; }
-        printRec(root_, "", true, os);
+        if (mnPrev) mnPrev->sibling = mn->sibling;
+        else        head = mn->sibling;
+
+        Node<T>* revKids = nullptr;
+        for (auto* ch = mn->child; ch; ) {
+            auto* nxt = ch->sibling;
+            ch->parent = nullptr;
+            ch->sibling = revKids;
+            revKids = ch;
+            ch = nxt;
+        }
+
+        BinominalHeap tmp;
+        tmp.head = revKids;
+        unionHeaps(this, &tmp);
+        delete mn;
     }
 };
 
-//==========================================================================
-//  MAIN
-//==========================================================================
+/* ------------------------------------------------------ */
+/*                        DEMO                            */
+/* ------------------------------------------------------ */
 int main() {
-    try {
-        //──── Rational demo ──────────────────────────────────────────
-        vector<Rational> vec = { {3,10},{1,2},{5,6},
-            {7,8},{2,3},{9,10},{11,12},{13,14} };
-        SplayTree<Rational> ratTree;
-        for (auto& r : vec) ratTree.insert(r);
+    cout << "Creating Heap A:\n";
+    BinominalHeap<Rational> A;
+    A.insert({3,4});
+    A.insert({2,4});
+    A.insert({7,3});
+    A.insert({5,6});
+    A.insert({-1,5});
+    A.printPretty();
 
-        cout << "NEW SPLAY TREE (Rational)\n";
-        ratTree.print();
+    cout << "\nCreating Heap B:\n";
+    BinominalHeap<Rational> B;
+    B.insert({10,7});
+    B.insert({-22,7});
+    B.insert({123,100});
+    B.insert({9,10});
+    B.printPretty();
 
-        cout << "EXTRACT MIN\n";
-        ratTree.extractMin();
-        ratTree.print();
+    cout << "\nUnion of A and B => Heap C :\n";
+    BinominalHeap<Rational> C;
+    C.unionHeaps(&A, &B);
+    C.printPretty();
 
-        cout << "\n──────────────────────────────────────────────────────────\n\n";
+    cout << "\nMinimum element in C: " << C.minNode()->value << "\n\n";
 
-        //──── int demo ───────────────────────────────────────────────
-        SplayTree<int> intTree;
-        for (int i = 0; i < 10; ++i) intTree.insert(i);
+    cout << "After extractMin():\n";
+    C.extractMin();
+    C.printPretty();
 
-        cout << "NEW SPLAY TREE (int)\n";
-        intTree.print();
-
-        cout << "EXTRACT MIN\n";
-        intTree.extractMin();
-        intTree.print();
-    }
-    catch (const exception& e) {
-        cerr << "Error: " << e.what() << '\n';
-        return 1;
-    }
     return 0;
 }
